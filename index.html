@@ -1,1 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ImageHost — Upload and share images</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container">
+        <h1>ImageHost</h1>
+        <p class="subtitle">Upload, get a link, share anywhere</p>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="uploader" aria-labelledby="uploader-title">
+        <h2 id="uploader-title">Upload images</h2>
+
+        <div id="dropzone" class="dropzone" tabindex="0" aria-label="Drag and drop images here">
+          <div class="dropzone-inner">
+            <span class="drop-icon" aria-hidden="true">📷</span>
+            <p>Drag & drop images here</p>
+            <p class="muted">or</p>
+            <label class="button" for="file-input">Choose files</label>
+            <input id="file-input" type="file" accept="image/*" multiple hidden />
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="upload-btn" class="button primary" disabled>Upload</button>
+        </div>
+
+        <div class="progress" aria-live="polite" aria-atomic="true">
+          <div id="progress-bar" class="progress-bar" style="width: 0%" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+        </div>
+
+        <div id="upload-results" class="results" hidden>
+          <h3>Links</h3>
+          <ul id="links-list" class="links-list"></ul>
+        </div>
+      </section>
+
+      <section class="gallery" aria-labelledby="gallery-title">
+        <div class="gallery-header">
+          <h2 id="gallery-title">Recent uploads</h2>
+          <button id="refresh-gallery" class="button ghost">Refresh</button>
+        </div>
+        <div id="gallery-grid" class="grid" role="list"></div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <p class="muted">Built with Flask • Running on port 8000</p>
+      </div>
+    </footer>
+
+    <noscript>
+      <div class="noscript">This app requires JavaScript for uploads and previews.</div>
+    </noscript>
+
+    <script src="/script.js" defer></script>
+  </body>
+  </html>
+
 
