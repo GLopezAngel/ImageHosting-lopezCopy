@@ -4,6 +4,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory, url_for, redirect
+from itsdangerous import URLSafeSerializer
 
 # --- Setup ---
 load_dotenv()
