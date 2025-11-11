@@ -1,6 +1,6 @@
 /*
  * ImageHost Frontend Script
- * Connects the HTML UI to the Flask backend and S3.
+ * Connects the HTML UI to the Flask backend (S3 private).
  */
 
 const API_KEY_STORAGE = 'imagehost_api_key';
@@ -42,24 +42,22 @@ async function apiFetch(endpoint, options = {}) {
 }
 
 // 1. Get or create a dev API key on load
+// ... (This function is unchanged) ...
 async function initApiKey() {
   let key = localStorage.getItem(API_KEY_STORAGE);
   if (key) {
     console.log('Using existing API key');
     return key;
   }
-
   console.log('No API key found, issuing a new one...');
   try {
     const data = await apiFetch('/api/v1/dev/issue-key', {
       method: 'POST',
-      body: {}, // Send an empty JSON object
+      body: {},
     });
-    
     if (!data.api_key) {
       throw new Error("Server didn't return an API key.");
     }
-    
     localStorage.setItem(API_KEY_STORAGE, data.api_key);
     console.log('New dev key issued and stored');
     return data.api_key;
@@ -69,9 +67,9 @@ async function initApiKey() {
 }
 
 // 2. Handle file selection (drag & drop, file input)
+// ... (This function is unchanged) ...
 function setupFileHandling(dropzone, fileInput, uploadBtn) {
   let fileList = [];
-
   function updateFileList(newFiles) {
     fileList = [...newFiles];
     if (fileList.length > 0) {
@@ -83,7 +81,6 @@ function setupFileHandling(dropzone, fileInput, uploadBtn) {
     }
     filesToUpload = fileList;
   }
-
   dropzone.addEventListener('dragover', (e) => {
     e.preventDefault();
     dropzone.classList.add('drag-over');
@@ -94,7 +91,6 @@ function setupFileHandling(dropzone, fileInput, uploadBtn) {
     dropzone.classList.remove('drag-over');
     updateFileList(e.dataTransfer.files);
   });
-
   dropzone.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', () => updateFileList(fileInput.files));
 }
@@ -120,18 +116,18 @@ async function handleUpload(uploadBtn, progressBarEl, resultsEl, linksListEl) {
         },
       });
 
-      // Step B: Upload the file directly to S3
+      // --- (MODIFIED) ---
+      // We upload to S3 without the 'x-amz-acl' header.
       const s3Response = await fetch(presigned_url, {
         method: 'PUT',
         body: file,
         headers: {
           'Content-Type': file.type,
-          'x-amz-acl': 'public-read' // <-- THIS HEADER IS NOW ADDED BACK
         },
       });
 
       if (!s3Response.ok) {
-        throw new Error('S3 upload failed'); // This will be caught
+        throw new Error('S3 upload failed');
       }
 
       // Step C: Tell our backend the upload is complete
@@ -145,26 +141,22 @@ async function handleUpload(uploadBtn, progressBarEl, resultsEl, linksListEl) {
         },
       });
 
-      // Update UI
+      // (MODIFIED) The 'url' we get back is now our app's URL
+      // e.g., /api/v1/image/img_...
       addLinkToResults(url, linksListEl);
       filesUploaded++;
       progressBarEl.style.width = `${(filesUploaded / totalFiles) * 100}%`;
 
     } catch (error) {
-      // This is where your console logs "Failed to upload file..."
       console.error('Failed to upload file:', file.name, error);
     }
-  } // The loop finishes, and...
+  }
 
-  // Done
   uploadBtn.disabled = false;
   resultsEl.hidden = false;
   filesToUpload = [];
+  console.log('All uploads complete');
   
-  // ...this misleadingly logs, even if a file failed.
-  console.log('All uploads complete'); 
-  
-  // Refresh the gallery after uploads are done
   setTimeout(() => {
     document.getElementById('refresh-gallery').click();
   }, 200);
@@ -185,10 +177,11 @@ async function refreshGallery(gridEl) {
     items.forEach((item) => {
       const el = document.createElement('div');
       el.className = 'grid-item';
+      
+      // (MODIFIED) The URL is now our app's URL, not S3
       el.innerHTML = `<img src="${item.url}" alt="${item.filename}" loading="lazy">`;
       
       el.addEventListener('click', () => showImageModal(item));
-      
       gridEl.appendChild(el);
     });
   } catch (error) {
@@ -201,13 +194,18 @@ async function refreshGallery(gridEl) {
 function addLinkToResults(url, listEl) {
   const item = document.createElement('li');
   item.className = 'link-item';
+  
+  // (MODIFIED) The URL in the box is now our app's URL
+  // We use window.location.origin to build the full link
+  const fullUrl = `${window.location.origin}${url}`;
+  
   item.innerHTML = `
-    <input class="link-url" type="text" value="${url}" readonly>
+    <input class="link-url" type="text" value="${fullUrl}" readonly>
     <button class="button copy-btn">Copy</button>
   `;
   item.querySelector('.copy-btn').addEventListener('click', (e) => {
     e.target.textContent = 'Copied!';
-    navigator.clipboard.writeText(url);
+    navigator.clipboard.writeText(fullUrl);
     setTimeout(() => {
       e.target.textContent = 'Copy';
     }, 2000);
@@ -221,16 +219,17 @@ function showImageModal(item) {
   const modalImg = document.getElementById('modal-img');
   const modalLinkInput = document.getElementById('modal-link-input');
 
+  // (MODIFIED) Set the src and link to our app's URL
   modalImg.src = item.url;
   modalImg.alt = item.filename;
-  modalLinkInput.value = item.url;
+  modalLinkInput.value = `${window.location.origin}${item.url}`;
   
   modal.style.display = 'flex';
 }
 
 // --- Main execution ---
+// ... (This function is unchanged) ...
 document.addEventListener('DOMContentLoaded', () => {
-  // Get all DOM elements
   const dropzone = document.getElementById('dropzone');
   const fileInput = document.getElementById('file-input');
   const uploadBtn = document.getElementById('upload-btn');
@@ -249,14 +248,12 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
-  // Set up all event listeners
   setupFileHandling(dropzone, fileInput, uploadBtn);
   uploadBtn.addEventListener('click', () =>
     handleUpload(uploadBtn, progressBar, uploadResults, linksList)
   );
   refreshBtn.addEventListener('click', () => refreshGallery(galleryGrid));
 
-  // Add Modal event listeners
   function closeModal() {
     modal.style.display = 'none';
   }
@@ -276,7 +273,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 2000);
   });
 
-  // Init API key and load initial gallery
   initApiKey().then(() => {
     refreshGallery(galleryGrid);
   });
