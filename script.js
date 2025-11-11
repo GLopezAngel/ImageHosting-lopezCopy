@@ -120,17 +120,18 @@ async function handleUpload(uploadBtn, progressBarEl, resultsEl, linksListEl) {
         },
       });
 
-      // Step B: Upload the file directly to S3 (NOT our backend)
+      // Step B: Upload the file directly to S3
       const s3Response = await fetch(presigned_url, {
         method: 'PUT',
         body: file,
         headers: {
-          'Content-Type': file.type
+          'Content-Type': file.type,
+          'x-amz-acl': 'public-read' // <-- THIS HEADER IS NOW ADDED BACK
         },
       });
 
       if (!s3Response.ok) {
-        throw new Error('S3 upload failed');
+        throw new Error('S3 upload failed'); // This will be caught
       }
 
       // Step C: Tell our backend the upload is complete
@@ -148,17 +149,20 @@ async function handleUpload(uploadBtn, progressBarEl, resultsEl, linksListEl) {
       addLinkToResults(url, linksListEl);
       filesUploaded++;
       progressBarEl.style.width = `${(filesUploaded / totalFiles) * 100}%`;
+
     } catch (error) {
+      // This is where your console logs "Failed to upload file..."
       console.error('Failed to upload file:', file.name, error);
-      // You could add error reporting to the UI here
     }
-  }
+  } // The loop finishes, and...
 
   // Done
   uploadBtn.disabled = false;
   resultsEl.hidden = false;
   filesToUpload = [];
-  console.log('All uploads complete');
+  
+  // ...this misleadingly logs, even if a file failed.
+  console.log('All uploads complete'); 
   
   // Refresh the gallery after uploads are done
   setTimeout(() => {
