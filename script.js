@@ -1,6 +1,6 @@
 /*
  * ImageHost Frontend Script
- * Connects the HTML UI to the Flask backend (local storage).
+ * Connects the HTML UI to the Flask backend and S3.
  */
 
 const API_KEY_STORAGE = 'imagehost_api_key';
@@ -99,7 +99,7 @@ function setupFileHandling(dropzone, fileInput, uploadBtn) {
   fileInput.addEventListener('change', () => updateFileList(fileInput.files));
 }
 
-// 3. Handle the upload process
+// 3. Handle the S3 upload process
 async function handleUpload(uploadBtn, progressBarEl, resultsEl, linksListEl) {
   uploadBtn.disabled = true;
   progressBarEl.parentElement.classList.add('active');
@@ -111,27 +111,57 @@ async function handleUpload(uploadBtn, progressBarEl, resultsEl, linksListEl) {
 
   for (const file of filesToUpload) {
     try {
-      const formData = new FormData();
-      formData.append('file', file); 
-
-      const { url } = await apiFetch('/api/v1/upload', {
+      // Step A: Ask our backend for a presigned S3 URL
+      const { presigned_url, iid, key } = await apiFetch('/api/v1/upload/request', {
         method: 'POST',
-        body: formData, 
+        body: {
+          filename: file.name,
+          mime_type: file.type,
+        },
       });
 
+      // Step B: Upload the file directly to S3 (NOT our backend)
+      const s3Response = await fetch(presigned_url, {
+        method: 'PUT',
+        body: file,
+        headers: {
+          'Content-Type': file.type,
+          'x-amz-acl': 'public-read', // Match ACL from backend
+        },
+      });
+
+      if (!s3Response.ok) {
+        throw new Error('S3 upload failed');
+      }
+
+      // Step C: Tell our backend the upload is complete
+      const { url } = await apiFetch('/api/v1/upload/complete', {
+        method: 'POST',
+        body: {
+          iid: iid,
+          key: key,
+          filename: file.name,
+          mime_type: file.type,
+        },
+      });
+
+      // Update UI
       addLinkToResults(url, linksListEl);
       filesUploaded++;
       progressBarEl.style.width = `${(filesUploaded / totalFiles) * 100}%`;
     } catch (error) {
       console.error('Failed to upload file:', file.name, error);
+      // You could add error reporting to the UI here
     }
   }
 
+  // Done
   uploadBtn.disabled = false;
   resultsEl.hidden = false;
   filesToUpload = [];
   console.log('All uploads complete');
   
+  // Refresh the gallery after uploads are done
   setTimeout(() => {
     document.getElementById('refresh-gallery').click();
   }, 200);
@@ -154,7 +184,6 @@ async function refreshGallery(gridEl) {
       el.className = 'grid-item';
       el.innerHTML = `<img src="${item.url}" alt="${item.filename}" loading="lazy">`;
       
-      // NEW: Add click listener to open the modal
       el.addEventListener('click', () => showImageModal(item));
       
       gridEl.appendChild(el);
@@ -183,7 +212,7 @@ function addLinkToResults(url, listEl) {
   listEl.prepend(item);
 }
 
-// NEW: Function to show the image modal
+// 6. Function to show the image modal
 function showImageModal(item) {
   const modal = document.getElementById('image-modal');
   const modalImg = document.getElementById('modal-img');
@@ -207,8 +236,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const linksList = document.getElementById('links-list');
   const galleryGrid = document.getElementById('gallery-grid');
   const refreshBtn = document.getElementById('refresh-gallery');
-
-  // NEW: Get Modal elements
   const modal = document.getElementById('image-modal');
   const modalCloseBtn = document.getElementById('modal-close-btn');
   const modalCopyBtn = document.getElementById('modal-copy-btn');
@@ -226,14 +253,13 @@ document.addEventListener('DOMContentLoaded', () => {
   );
   refreshBtn.addEventListener('click', () => refreshGallery(galleryGrid));
 
-  // NEW: Add Modal event listeners
+  // Add Modal event listeners
   function closeModal() {
     modal.style.display = 'none';
   }
 
   modalCloseBtn.addEventListener('click', closeModal);
   modal.addEventListener('click', (e) => {
-    // Close if user clicks on the dark overlay, but not the content
     if (e.target === modal) {
       closeModal();
     }

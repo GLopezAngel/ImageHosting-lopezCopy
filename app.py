@@ -1,24 +1,37 @@
 from __future__ import annotations
-import os, time, uuid, redis
+import os, time, uuid, redis, boto3
+from botocore.config import Config
+from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory, url_for
 from itsdangerous import URLSafeSerializer
-from werkzeug.utils import secure_filename
 
 # --- Setup ---
 load_dotenv()
 app = Flask(__name__)
 
-# --- Configure an upload folder ---
-# Create an 'uploads' folder in your project
-UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET", "dev-secret")
 signer = URLSafeSerializer(app.config["SECRET_KEY"], salt="api-key")
+
+# Redis
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 r = redis.from_url(REDIS_URL, decode_responses=True)
+
+# --- S3 Setup ---
+# Boto3 will automatically find the Learner Lab credentials!
+# We just need to tell it the bucket name and region.
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+AWS_S3_BUCKET_NAME = os.getenv("AWS_S3_BUCKET_NAME")
+
+if not AWS_S3_BUCKET_NAME:
+    print("Error: AWS_S3_BUCKET_NAME environment variable not set.")
+    # You might want to exit or raise an error here
+    
+s3 = boto3.client(
+    "s3",
+    region_name=AWS_REGION,
+    config=Config(signature_version="s3v4"),
+)
 
 # --- Helper functions ---
 def now(): return int(time.time())
@@ -28,7 +41,12 @@ def k_user(uid): return f"user:{uid}"
 def k_user_images(uid): return f"user:{uid}:images"
 def k_img(iid): return f"img:{iid}"
 
-# --- Serve static files (HTML, CSS, JS) ---
+# This helper calculates the final, permanent S3 URL
+def get_s3_url(key):
+    return f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{key}"
+
+# --- Static file routes (HTML, CSS, JS) ---
+# These are unchanged
 @app.get("/")
 def serve_index():
     root = os.path.dirname(os.path.abspath(__file__))
@@ -44,16 +62,10 @@ def serve_style():
     root = os.path.dirname(os.path.abspath(__file__))
     return send_from_directory(root, "style.css")
 
-# --- NEW: Create a route to serve uploaded files ---
-@app.get('/uploads/<path:filename>')
-def serve_upload(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-
 @app.get("/health")
 def health_check():
     return ok({"status": "ok"})
 
-# --- Redis test routes ---
 @app.get("/redis-check")
 def redis_check():
     try:
@@ -61,7 +73,7 @@ def redis_check():
     except Exception as e:
         return err("redis_unreachable", str(e), 500)
 
-# --- Authentication helper ---
+# --- Auth Routes (Unchanged) ---
 def require_api_key():
     token = (request.headers.get("X-API-Key") or "").strip()
     if not token:
@@ -71,7 +83,6 @@ def require_api_key():
     except Exception:
         return None
 
-# --- Create a dev API key ---
 @app.post("/api/v1/dev/issue-key")
 def issue_key():
     username = (request.json or {}).get("username", "demo").strip() or "demo"
@@ -81,60 +92,99 @@ def issue_key():
     token = signer.dumps({"uid": uid})
     return ok({"api_key": token, "uid": uid})
 
-# --- NEW: Local Upload Endpoint ---
-@app.post("/api/v1/upload")
-def upload_local():
+# --- S3 Upload Endpoints ---
+# These replace the old /api/v1/upload route
+
+@app.post("/api/v1/upload/request")
+def request_upload():
+    """
+    Asks for permission to upload a file.
+    Returns a one-time-use S3 URL.
+    """
     auth = require_api_key()
     if not auth:
         return err("auth", "invalid api key", 401)
     
     uid = auth["uid"]
+    req_data = request.json or {}
+    filename = req_data.get("filename")
+    mime_type = req_data.get("mime_type")
 
-    if 'file' not in request.files:
-        return err("validation", "No file part", 400)
+    if not all([filename, mime_type]):
+        return err("validation", "filename and mime_type are required", 400)
     
-    file = request.files['file']
-    if file.filename == '':
-        return err("validation", "No selected file", 400)
+    # Create a unique ID and key for S3
+    iid = f"img_{uuid.uuid4().hex[:12]}"
+    key = f"uploads/{uid}/{iid}/{filename}"
 
-    if file:
-        # Create a unique-ish filename
-        filename = secure_filename(file.filename)
-        ext = filename.split('.')[-1] if '.' in filename else ''
-        iid = f"img_{uuid.uuid4().hex[:12]}"
-        new_filename = f"{iid}.{ext}" if ext else iid
-        
-        # Save the file
-        save_path = os.path.join(app.config['UPLOAD_FOLDER'], new_filename)
-        file.save(save_path)
-        
-        # Get the URL where the file is served
-        img_url = url_for('serve_upload', filename=new_filename, _external=True)
-        
-        # Save metadata to Redis
-        pipe = r.pipeline()
-        pipe.hset(k_img(iid), mapping={
-            "id": iid,
-            "owner_uid": uid,
-            "key": new_filename, # Store the local filename
-            "url": img_url,
-            "filename": filename, # Original filename
-            "mime": file.mimetype,
-            "private": 0,
-            "created_at": now(),
-            "views": 0
+    try:
+        # Generate the presigned URL
+        presigned_url = s3.generate_presigned_url(
+            "put_object",
+            Params={
+                "Bucket": AWS_S3_BUCKET_NAME,
+                "Key": key,
+                "ContentType": mime_type,
+                "ACL": "public-read", # Make the file public
+            },
+            ExpiresIn=3600,  # 1 hour
+        )
+        return ok({
+            "iid": iid,
+            "key": key,
+            "presigned_url": presigned_url,
         })
-        pipe.zadd(k_user_images(uid), {iid: now()})
-        pipe.execute()
+    except ClientError as e:
+        print(f"S3 Error: {e}")
+        # This will fail if the LabUserRole doesn't have 's3:PutObject'
+        return err("s3_error", "Could not generate S3 upload URL. Check permissions.", 500)
 
-        return ok({"id": iid, "url": img_url}, 201)
+@app.post("/api/v1/upload/complete")
+def complete_upload():
+    """
+    Called by the browser *after* the S3 upload is done.
+    Saves the final data to Redis.
+    """
+    auth = require_api_key()
+    if not auth:
+        return err("auth", "invalid api key", 401)
+    
+    uid = auth["uid"]
+    req_data = request.json or {}
+    iid = req_data.get("iid")
+    key = req_data.get("key")
+    filename = req_data.get("filename")
+    mime_type = req_data.get("mime_type")
 
-# --- List all images for a user ---
+    if not all([iid, key, filename, mime_type]):
+        return err("validation", "iid, key, filename, and mime_type are required", 400)
+
+    # Save the final image data to Redis
+    img_url = get_s3_url(key)
+    pipe = r.pipeline()
+    pipe.hset(k_img(iid), mapping={
+        "id": iid,
+        "owner_uid": uid,
+        "key": key,
+        "url": img_url,
+        "filename": filename,
+        "mime": mime_type,
+        "private": 0,
+        "created_at": now(),
+        "views": 0
+    })
+    pipe.zadd(k_user_images(uid), {iid: now()})
+    pipe.execute()
+
+    return ok({"id": iid, "url": img_url}, 201)
+
+# --- Gallery Endpoint (Unchanged) ---
 @app.get("/api/v1/me/images")
 def me_images():
     auth = require_api_key()
     if not auth:
         return err("auth", "invalid api key", 401)
+    
     uid = auth["uid"]
     iids = r.zrevrange(k_user_images(uid), 0, 49)
     items = []
