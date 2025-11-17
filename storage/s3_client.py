@@ -37,7 +37,6 @@ def generate_presigned_upload_url(key, mime_type, expires_in=3600):
                 "Bucket": AWS_S3_BUCKET_NAME,
                 "Key": key,
                 "ContentType": mime_type,
-                "ACL": "public-read",
             },
             ExpiresIn=expires_in,
         )

@@ -127,7 +127,6 @@ async function handleUpload(uploadBtn, progressBarEl, resultsEl, linksListEl) {
         body: file,
         headers: {
           'Content-Type': file.type,
-          'x-amz-acl': 'public-read',
         },
       });
       if (!s3Response.ok) {
