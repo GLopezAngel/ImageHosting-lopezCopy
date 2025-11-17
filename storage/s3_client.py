@@ -24,6 +24,10 @@ def get_s3_url(key):
     """Get S3 URL reference for a given key."""
     return f"s3://{AWS_S3_BUCKET_NAME}/{key}"
 
+def get_public_url(key):
+    """Get the public HTTPS URL for an object (requires public bucket or CDN)."""
+    return f"https://{AWS_S3_BUCKET_NAME}.s3.amazonaws.com/{key}"
+
 def generate_presigned_upload_url(key, mime_type, expires_in=3600):
     """Generate a presigned URL for uploading an object to S3."""
     try:

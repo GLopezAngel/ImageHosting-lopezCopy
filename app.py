@@ -99,10 +99,10 @@ def complete_upload():
     if not all([iid, key, filename, mime_type]):
         return err("validation", "iid, key, filename, and mime_type are required", 400)
 
-    img_url_ref = s3_client.get_s3_url(key)
+    img_url_ref = s3_client.get_public_url(key)
     redis_client.store_image(iid, uid, key, img_url_ref, filename, mime_type, now())
 
-    return ok({"id": iid, "url": f"/api/v1/image/{iid}"}, 201)
+    return ok({"id": iid, "url": img_url_ref}, 201)
 
 # --- Gallery Endpoints ---
 
@@ -119,7 +119,8 @@ def me_images():
     items = []
     for data in results:
         if data:
-            data['url'] = f"/api/v1/image/{data['id']}"
+            if not data.get("url"):
+                data['url'] = f"/api/v1/image/{data['id']}"
             items.append(data)
             
     return ok({"items": items})

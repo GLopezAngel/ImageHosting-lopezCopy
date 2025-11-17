@@ -172,7 +172,7 @@ async function refreshGallery(gridEl) {
 function addLinkToResults(url, listEl) {
   const item = document.createElement('li');
   item.className = 'link-item';
-  const fullUrl = `${window.location.origin}${url}`;
+  const fullUrl = url.startsWith('http') ? url : `${window.location.origin}${url}`;
   item.innerHTML = `
     <input class="link-url" type="text" value="${fullUrl}" readonly>
     <button class="button copy-btn">Copy</button>
