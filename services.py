@@ -3,7 +3,7 @@ import os
 import re
 import unicodedata
 import time
-from storage import redis_client, s3_client
+from infrastructure import redis_client, s3_client
 
 # Helper for timestamps
 def now(): return int(time.time())
@@ -52,7 +52,7 @@ class ImageService:
         safe_filename = Utils.sanitize_filename(filename)
         iid = f"img_{uuid.uuid4().hex[:12]}"
         
-        # Business Rule: File structure is uploads/uid/iid/filename
+        # File structure is uploads/uid/iid/filename
         key = f"uploads/{uid}/{iid}/{safe_filename}"
 
         presigned_url = s3_client.generate_presigned_upload_url(key, mime_type)

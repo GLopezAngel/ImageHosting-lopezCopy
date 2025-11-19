@@ -3,9 +3,6 @@ import os
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, render_template, redirect
 from itsdangerous import URLSafeSerializer
-
-# Import our new Service Layer
-# NOTICE: We do NOT import redis_client or s3_client here anymore.
 from services import AuthService, ImageService
 from storage import redis_client # Only imported for the health check route
 
@@ -41,8 +38,6 @@ def health_check():
 
 @app.get("/redis-check")
 def redis_check():
-    # This is a system diagnostic, so calling redis direct is acceptable,
-    # but could also be moved to a SystemService.
     try:
         return ok({"redis": bool(redis_client.ping_redis())})
     except Exception as e:
