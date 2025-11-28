@@ -36,14 +36,20 @@ async function apiFetch(endpoint, options = {}, attempt = 0) {
     let errorMessage;
     try {
       const err = await response.json();
+      // Handle the "error" envelope from python's err() function
       errorMessage = err.error?.message || 'API request failed';
     } catch (e) {
       errorMessage = `Server error: ${response.status} ${response.statusText}`;
     }
     throw new Error(errorMessage);
   }
+  
   const text = await response.text();
-  return text ? JSON.parse(text) : {};
+  const json = text ? JSON.parse(text) : {};
+  
+  // --- FIX IS HERE ---
+  // If the server wrapped the response in "data", unwrap it.
+  return json.data ? json.data : json; 
 }
 
 // 1. Get or create a dev API key on load
