@@ -132,3 +132,4 @@ def test_delete_image_validates_owner(fake_redis, fake_s3):
     assert fake_s3.deleted == ["k1"]
     assert fake_redis.deleted[0] == ("img_1", "owner")
 
+

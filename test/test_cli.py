@@ -49,3 +49,4 @@ def test_cmd_upload_happy_path(monkeypatch, tmp_path, capsys):
     assert calls[0][1] == "/api/v1/upload/request"
     assert calls[1][1] == "/api/v1/upload/complete"
 
+

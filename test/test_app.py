@@ -80,3 +80,4 @@ def test_get_image_redirects(client, monkeypatch):
     assert resp.status_code == 302
     assert resp.headers["Location"] == "http://example.com/img.jpg"
 
+
