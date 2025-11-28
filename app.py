@@ -39,7 +39,7 @@ def health_check():
 @app.get("/redis-check")
 def redis_check():
     try:
-        return ok({"redis": bool(redis_client.ping_redis())})
+        return ok({"redis": bool(redis_client.redis())})
     except Exception as e:
         return err("redis_unreachable", str(e), 500)
 
